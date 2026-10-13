@@ -1,4 +1,4 @@
-// VISAGE Study 2 — Google Apps Script backend (bound to a Google Sheet). Setup: backend/SETUP.md
+// VISAGE Study 2 - Google Apps Script backend (bound to a Google Sheet). Setup: backend/SETUP.md
 // Sheets (created on first use): registry (pid -> k, disclosure), rows (long-format responses), participants (one row per update).
 // GET  ?action=ping -> {ok, sheet}
 // GET  ?action=register&study=pilot&pid=..&target=F|M  -> {ok, k, disclosure, resumed, complete}
