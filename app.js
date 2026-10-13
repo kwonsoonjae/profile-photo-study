@@ -6,6 +6,8 @@
   var app = document.getElementById('app'), bar = document.getElementById('bar');
   var M = null, S = null;  // manifest, state
   var params = new URLSearchParams(location.search);
+  // ?test=1 records under '<study>-test' (separate arrival counter and rows), so tester runs never take pilot slots
+  if (params.get('test') === '1') CFG.study = CFG.study + '-test';
 
   // ---------- utilities ----------
   function h(tag, attrs, kids) {

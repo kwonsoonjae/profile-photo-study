@@ -1,5 +1,6 @@
 // VISAGE Study 2 — Google Apps Script backend (bound to a Google Sheet). Setup: backend/SETUP.md
 // Sheets (created on first use): registry (pid -> k, disclosure), rows (long-format responses), participants (one row per update).
+// GET  ?action=ping -> {ok, sheet}
 // GET  ?action=register&study=pilot&pid=..&target=F|M  -> {ok, k, disclosure, resumed, complete}
 // POST {kind:'rows', pid, rows:[...]} | {kind:'participant', participant:{...}}  (Content-Type text/plain, avoids CORS preflight)
 
@@ -18,6 +19,7 @@ function clean_(s, n) { return String(s == null ? '' : s).slice(0, n || 200); }
 
 function doGet(e) {
   var p = e.parameter || {};
+  if (p.action === 'ping') return json_({ ok: true, sheet: SpreadsheetApp.getActiveSpreadsheet().getName() });
   if (p.action !== 'register') return json_({ ok: false, error: 'unknown action' });
   var pid = clean_(p.pid, 80), study = clean_(p.study, 20), target = p.target === 'M' ? 'M' : 'F';
   if (!pid) return json_({ ok: false, error: 'pid required' });
