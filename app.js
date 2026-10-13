@@ -6,8 +6,10 @@
   var app = document.getElementById('app'), bar = document.getElementById('bar');
   var M = null, S = null;  // manifest, state
   var params = new URLSearchParams(location.search);
+  var SELFKEY_BASE = 'visage_selfpid_';
   // ?test=1 records under '<study>-test' (separate arrival counter and rows), so tester runs never take pilot slots
   if (params.get('test') === '1') CFG.study = CFG.study + '-test';
+  var SELFKEY = SELFKEY_BASE + CFG.study;  // site-made pids are kept per sample, so test runs never reuse a pilot pid
 
   // ---------- utilities ----------
   function h(tag, attrs, kids) {
@@ -411,6 +413,7 @@
         vEnd();
       });
     }
+    if (S.src === 'self' && /-test$/.test(CFG.study)) { try { localStorage.removeItem(SELFKEY); } catch (e) { /* ignore */ } }  // testers can retake from the same browser
     bar.style.width = '100%';
     var kids = [h('h1', { text: '참여해 주셔서 감사합니다' }), h('div', { class: 'card' }, [
       h('p', { text: '이 연구는 AI가 데이팅 앱 사진을 보는 사람에 맞게 조정할 때 보는 사람과 사진 주인이 각각 어떻게 반응하는지 알아보려는 것입니다.' }),
@@ -435,8 +438,8 @@
     var pid = params.get('pid') || params.get('PROLIFIC_PID') || params.get('uid');
     var src = pid ? (params.get('src') || 'panel') : 'self';
     if (!pid) {
-      try { pid = localStorage.getItem('visage_selfpid'); } catch (e) { /* ignore */ }
-      if (!pid) { pid = (LIVE ? 's-' : 'dev-') + Math.random().toString(36).slice(2, 10); try { localStorage.setItem('visage_selfpid', pid); } catch (e) { /* ignore */ } }
+      try { pid = localStorage.getItem(SELFKEY); } catch (e) { /* ignore */ }
+      if (!pid) { pid = (LIVE ? (/-test$/.test(CFG.study) ? 't-' : 's-') : 'dev-') + Math.random().toString(36).slice(2, 10); try { localStorage.setItem(SELFKEY, pid); } catch (e) { /* ignore */ } }
     }
     var saved = null; try { saved = JSON.parse(localStorage.getItem('visage_' + CFG.study + '_' + pid)); } catch (e) { /* ignore */ }
     if (saved && saved.pid === pid) {
