@@ -119,7 +119,7 @@
     var b = h('p', { class: 'muted', text: '저장 중…' }); screen([b]);
     (function attempt(n) {
       flush().then(function (ok) {
-        if (ok) { sendParticipant(false); go(next); return; }
+        if (ok) { if (next !== 'end') sendParticipant(false); go(next); return; }  // 'end' sends the final summary itself; avoid a late non-final overwrite
         if (n < 3) { setTimeout(function () { attempt(n + 1); }, 1500 * (n + 1)); return; }
         screen([h('div', { class: 'card' }, [h('p', { text: '응답을 저장하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.' }),
           nextBtn('다시 시도', function () { return true; }, function () { blockEnd(next); })])]);
