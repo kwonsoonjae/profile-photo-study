@@ -109,7 +109,7 @@
        select_intro: vSelectIntro, select: vSelect, transition: vTransition, ownerA_rate: vOwnerRate.bind(null, 'A'), ownerA_ladder: vLadder,
        ownerA_guess: vGuess, ownerA_survey: vOwnerSurvey, ownerB_rate: vOwnerRate.bind(null, 'B'), end: vEnd })[step]();
   }
-  function axes() { return CFG.study === 'pilot' ? M.axes.map(function (a) { return a.id; }) : CFG.mainAxes; }
+  function axes() { return CFG.study.indexOf('pilot') === 0 ? M.axes.map(function (a) { return a.id; }) : CFG.mainAxes; }
   // Participant-facing dimension names (generation vocabulary in axes.json stays as is)
   var AXIS_LABEL = { smile: '표정 (진지한 ↔ 활짝 웃는)', hair: '머리 (차분하게 정돈 ↔ 볼륨 있게)', grooming: '꾸밈 (여: 화장 / 남: 수염)',
     attire: '옷차림 (후드·티셔츠 ↔ 셔츠·블라우스)', lighting: '조명 (밝은 자연광 ↔ 따뜻한 분위기)', background: '배경 (실내 ↔ 야외)',
