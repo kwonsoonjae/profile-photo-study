@@ -111,7 +111,11 @@
        select_intro: vSelectIntro, select: vSelect, transition: vTransition, ownerA_rate: vOwnerRate.bind(null, 'A'), ownerA_ladder: vLadder,
        ownerA_guess: vGuess, ownerA_survey: vOwnerSurvey, ownerB_rate: vOwnerRate.bind(null, 'B'), end: vEnd })[step]();
   }
-  function axes() { return CFG.study.indexOf('pilot') === 0 ? M.axes.map(function (a) { return a.id; }) : CFG.mainAxes; }
+  function axes() { return CFG.study.indexOf('pilot') === 0 ? M.axes.map(function (a) { return a.id; }) : CFG.mainAxes; }  // taste axes (j* candidates)
+  function calibAxes() {  // v0.3: head pose is calibrated (universal-axis check) but never a j* candidate
+    var has = (M.calibration[S.target] || []).some(function (c) { return c.axis === 'pose'; });
+    return has ? axes().concat(['pose']) : axes();
+  }
   // Participant-facing dimension names (generation vocabulary in axes.json stays as is)
   var AXIS_LABEL = { smile: '표정 (진지한 ↔ 활짝 웃는)', hair: '머리 (차분하게 정돈 ↔ 볼륨 있게)', grooming: '꾸밈 (여: 화장 / 남: 수염)',
     attire: '옷차림 (후드·티셔츠 ↔ 셔츠·블라우스)', lighting: '조명 (밝은 자연광 ↔ 따뜻한 분위기)', background: '배경 (실내 ↔ 야외)',
@@ -203,7 +207,7 @@
     return h('div', {}, [row, h('div', { class: 'dots-labels' }, [h('span', { text: '왼쪽' }), h('span', {}), h('span', { text: '비슷' }), h('span', {}), h('span', { text: '오른쪽' })])]);
   }
   function vCalibIntro() {
-    if (!S.pairs) { S.pairs = VA.calibrationPairs(M.calibration[S.target], axes(), S.pid); S.calibIdx = 0; S.calib = []; save(); }
+    if (!S.pairs) { S.pairs = VA.calibrationPairs(M.calibration[S.target], calibAxes(), S.pid, CFG.calibRepeats === undefined ? 4 : CFG.calibRepeats); S.calibIdx = 0; S.calib = []; save(); }
     preload([].concat.apply([], S.pairs.slice(0, 3).map(function (p) { return [p.left, p.right]; })));
     screen([h('h1', { text: '사진 비교' }), h('div', { class: 'card' }, [
       h('p', { text: '같은 사람의 프로필 사진 두 장이 나란히 나옵니다. 데이팅 앱에서 이 사람을 본다면 어느 쪽 사진이 더 매력적인지 골라 주세요.' }),
@@ -221,21 +225,21 @@
       dots(function (raw) {
         setTimeout(function () {
           var v = pr.posSide === 'R' ? raw : -raw;  // positive = POS pole preferred
-          S.calib.push({ base: pr.base, axis: pr.axis, value: v });
-          rec('calib', { target_id: pr.base, file: pr.left + '|' + pr.right, condition: 'calib', axis: pr.axis, pole: 'pos' + pr.posSide, strength: 2, item: 'pair', value: v, rt_ms: now() - t0, order: i });
+          S.calib.push({ base: pr.base, axis: pr.axis, value: v, repeat: !!pr.repeat });
+          rec('calib', { target_id: pr.base, file: pr.left + '|' + pr.right, condition: 'calib', axis: pr.axis, pole: 'pos' + pr.posSide, strength: 2, item: pr.repeat ? 'pair_repeat' : 'pair', value: v, rt_ms: now() - t0, order: i });
           S.calibIdx++; save(); vCalib();
         }, 180);
       })])]);
   }
   function finishCalib() {
-    var ax = axes(), b = VA.computeBetaPairs(S.calib, ax), j = VA.pickAxis(b.beta, b.agree, ax, S.pid);
+    var ax = axes(), b = VA.computeBetaPairs(S.calib, calibAxes()), j = VA.pickAxis(b.beta, b.agree, ax, S.pid);
     S.beta = b.beta; S.agree = b.agree; S.jstar = { axis: j.axis, sign: j.sign }; S.flat = j.flat; S.tie = j.tie;
     S.viewerPlan = VA.viewerAssignment(M, S.target, S.k, S.jstar);
     S.viewerOrder = shuffle(S.viewerPlan.map(function (_, i) { return i; }), S.pid + ':viewer');
     S.attentionAt = 4 + VA.hash(S.pid + ':att') % 8;  // attention card inserted after this many owner cards
     S.viewerIdx = 0;
     rec('calib', { item: 'jstar', axis: j.axis, pole: j.sign > 0 ? 'pos' : 'neg', value: j.flat ? 'flat' : (j.tie ? 'tie' : 'ok') });
-    ax.forEach(function (x) { rec('calib', { item: 'beta', axis: x, value: b.beta[x] }); });
+    calibAxes().forEach(function (x) { rec('calib', { item: 'beta', axis: x, value: b.beta[x] }); });
     blockEnd('viewer_intro');
   }
 
@@ -328,7 +332,7 @@
   }
 
   // 6 owner block
-  var KIND_LABEL = { enhance: '보정', axis_pref: '변형', axis_opp: '변형' };
+  var KIND_LABEL = { universal: '변형', enhance: '보정', axis_pref: '변형', axis_opp: '변형' };
   function vOwnerRate(which) {
     var P = S.ownerPlan[which], order = shuffle(P.variants.map(function (_, i) { return i; }), S.pid + ':own' + which), a = {}, t0 = now(), btn;
     var needSelf = which === 'A';
@@ -356,18 +360,18 @@
   function vLadder() {
     var P = S.ownerPlan.A, a = {}, t0 = now(), btn;
     btn = nextBtn('다음', function () { return a.max !== undefined; }, function () {
-      rec('owner', { target_id: P.ownerId, condition: 'ownerA', axis: 'enhance', item: 'intensity_max', value: a.max, rt_ms: now() - t0 });
+      rec('owner', { target_id: P.ownerId, condition: 'ownerA', axis: P.ladderAxis || 'enhance', item: 'intensity_max', value: a.max, rt_ms: now() - t0 });
       save(); go('ownerA_guess');
     });
-    var labels = ['약하게', '중간', '강하게'];
-    screen([h('h1', { text: '보정 강도' }), h('p', { text: '같은 원본을 AI가 세 가지 강도로 보정했습니다. 내 프로필이라면 어느 강도까지 허용하시겠어요?' }),
+    var pose = P.ladderAxis === 'pose', labels = pose ? ['조금', '중간', '많이'] : ['약하게', '중간', '강하게'];
+    screen([h('h1', { text: pose ? '얼굴 각도' : '보정 강도' }), h('p', { text: pose ? '같은 원본에서 AI가 얼굴 각도를 세 가지 정도로 돌렸습니다. 내 프로필이라면 어느 정도까지 허용하시겠어요?' : '같은 원본을 AI가 세 가지 강도로 보정했습니다. 내 프로필이라면 어느 강도까지 허용하시겠어요?' }),
       h('div', { class: 'row4' }, [h('div', {}, [img(P.orig), h('div', { class: 'label-under', text: '원본' })])].concat(P.ladder.map(function (f, i) {
         return h('div', {}, [img(f), h('div', { class: 'label-under', text: labels[i] })]);
       }))),
-      h('div', { class: 'card' }, [choices(a, 'max', [{ label: '보정하지 않는다', value: 0 }, { label: '약하게까지', value: 1 }, { label: '중간까지', value: 2 }, { label: '강하게까지', value: 3 }], function () { btn.refresh(); })]), btn]);
+      h('div', { class: 'card' }, [choices(a, 'max', [{ label: pose ? '바꾸지 않는다' : '보정하지 않는다', value: 0 }, { label: labels[0] + '까지', value: 1 }, { label: '중간까지', value: 2 }, { label: labels[2] + '까지', value: 3 }], function () { btn.refresh(); })]), btn]);
   }
   function vGuess() {
-    var P = S.ownerPlan.A, targets = P.variants.filter(function (v) { return v.kind !== 'enhance'; });
+    var P = S.ownerPlan.A, targets = P.variants.filter(function (v) { return v.kind === 'axis_pref' || v.kind === 'axis_opp'; });
     targets = shuffle(targets, S.pid + ':guess');
     var a = {}, t0 = now(), btn;
     var opts = shuffle(axes(), S.pid + ':guessopts').map(function (x) { return { label: axisLabel(x), value: x }; }).concat([{ label: '잘 모르겠다', value: 'unknown' }]);
