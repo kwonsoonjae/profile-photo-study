@@ -332,7 +332,7 @@
   }
 
   // 6 owner block
-  var KIND_LABEL = { universal: '변형', enhance: '보정', axis_pref: '변형', axis_opp: '변형' };
+  var KIND_LABEL = { universal: '변형', enhance: '보정', axis_pref: '변형', axis_opp: '변형', ai_global: '변형' };
   function vOwnerRate(which) {
     var P = S.ownerPlan[which], order = shuffle(P.variants.map(function (_, i) { return i; }), S.pid + ':own' + which), a = {}, t0 = now(), btn;
     var needSelf = which === 'A';
@@ -346,7 +346,7 @@
     });
     var r = function () { btn.refresh(); };
     var intro = which === 'A'
-      ? '원본 사진이 당신의 프로필 사진이라고 상상해 주세요. AI가 이 사진을 바꾼 버전 세 장을 하나씩 원본 옆에 놓았습니다.'
+      ? '원본 사진이 당신의 프로필 사진이라고 상상해 주세요. AI가 이 사진을 바꾼 버전 ' + P.variants.length + '장을 하나씩 원본 옆에 놓았습니다.'
       : '이번에는 다른 사람의 사진입니다. 마찬가지로 원본이 당신의 프로필 사진이라고 상상하고 답해 주세요.';
     var cards = order.map(function (i, pos) {
       var v = P.variants[i], kids = [h('span', { class: 'tag', text: '버전 ' + (pos + 1) }),
@@ -371,15 +371,15 @@
       h('div', { class: 'card' }, [choices(a, 'max', [{ label: pose ? '바꾸지 않는다' : '보정하지 않는다', value: 0 }, { label: labels[0] + '까지', value: 1 }, { label: '중간까지', value: 2 }, { label: labels[2] + '까지', value: 3 }], function () { btn.refresh(); })]), btn]);
   }
   function vGuess() {
-    var P = S.ownerPlan.A, targets = P.variants.filter(function (v) { return v.kind === 'axis_pref' || v.kind === 'axis_opp'; });
+    var P = S.ownerPlan.A, targets = P.variants.filter(function (v) { return v.kind === 'axis_pref' || v.kind === 'axis_opp' || v.kind === 'ai_global'; });
     targets = shuffle(targets, S.pid + ':guess');
     var a = {}, t0 = now(), btn;
-    var opts = shuffle(axes(), S.pid + ':guessopts').map(function (x) { return { label: axisLabel(x), value: x }; }).concat([{ label: '잘 모르겠다', value: 'unknown' }]);
+    var opts = shuffle(axes(), S.pid + ':guessopts').map(function (x) { return { label: axisLabel(x), value: x }; }).concat([{ label: '여러 가지가 한꺼번에 바뀌었다', value: 'multiple' }, { label: '잘 모르겠다', value: 'unknown' }]);
     btn = nextBtn('다음', function () { return targets.every(function (_, i) { return a['g' + i] && a['d' + i]; }); }, function () {
       targets.forEach(function (v, i) {
         var base = { target_id: P.ownerId, file: v.file, condition: 'ownerA', axis: v.axis, pole: v.pole, strength: 2, rt_ms: now() - t0, order: i };
         rec('owner', Object.assign({ item: 'guess', value: a['g' + i] }, base));
-        rec('owner', Object.assign({ item: 'guess_correct', value: a['g' + i] === v.axis ? 1 : 0 }, base));
+        rec('owner', Object.assign({ item: 'guess_correct', value: (v.axis === 'aiglobal' ? a['g' + i] === 'multiple' : a['g' + i] === v.axis) ? 1 : 0 }, base));
         rec('owner', Object.assign({ item: 'describable', value: a['d' + i] }, base));
       });
       save(); go('ownerA_survey');
@@ -399,12 +399,15 @@
     var items = CONTROL.map(function (c) { return h('div', {}, [h('p', { class: 'q', text: c[1] }), scale(a, c[0], 5, '필요 없다', '꼭 필요하다', r)]); });
     var more = [['goal_attention', '이 기능을 쓴다면 내 목표는 더 많은 사람의 관심을 받는 것이다'], ['goal_fit', '이 기능을 쓴다면 내 목표는 나와 맞는 사람에게 정확히 보이는 것이다'],
       ['intent_use', '데이팅 앱에 이런 기능이 있다면 쓰겠다'], ['intent_disclose', '내 사진에 ‘AI 편집’ 표시가 붙어도 괜찮다']];
-    btn = nextBtn('다음', function () { return CONTROL.concat(more).every(function (c) { return a[c[0]]; }); }, function () {
+    var FEATURE = [{ label: 'AI가 사진 전체를 알아서 보정해 주는 기능', value: 'auto' }, { label: '바꿀 항목을 내가 고르고 확인하는 기능', value: 'select' }];  // v0.3.1
+    btn = nextBtn('다음', function () { return CONTROL.concat(more).every(function (c) { return a[c[0]]; }) && a.feature_pref; }, function () {
       CONTROL.concat(more).forEach(function (c, i) { rec('owner', { target_id: S.ownerPlan.A.ownerId, condition: 'ownerA', item: c[0], value: a[c[0]], rt_ms: now() - t0, order: i }); });
+      rec('owner', { target_id: S.ownerPlan.A.ownerId, condition: 'ownerA', item: 'feature_pref', value: a.feature_pref, rt_ms: now() - t0, order: CONTROL.length + more.length });
       save(); go('ownerB_rate');
     });
     screen([h('h1', { text: '이런 기능이 있다면' }), h('div', { class: 'card' }, [h('p', { text: 'AI가 보는 사람에 맞춰 내 프로필 사진을 조정해 주는 기능이 있다고 할 때, 아래 장치가 얼마나 필요하다고 보시나요?' })].concat(items)),
-      h('div', { class: 'card' }, more.map(function (c) { return h('div', {}, [h('p', { class: 'q', text: c[1] }), scale(a, c[0], 7, '전혀 아니다', '매우 그렇다', r)]); })), btn]);
+      h('div', { class: 'card' }, more.map(function (c) { return h('div', {}, [h('p', { class: 'q', text: c[1] }), scale(a, c[0], 7, '전혀 아니다', '매우 그렇다', r)]); })),
+      h('div', { class: 'card' }, [h('p', { class: 'q', text: '둘 중 하나만 쓸 수 있다면 어느 쪽을 쓰시겠어요?' }), choices(a, 'feature_pref', FEATURE, r)]), btn]);
   }
 
   // 7 end
