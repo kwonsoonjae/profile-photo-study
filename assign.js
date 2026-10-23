@@ -1,6 +1,9 @@
 // VISAGE Study 2 — in-survey assignment logic (SURVEY_SPEC v0.3 §1–§4). Pure functions, no platform dependency.
 // v0.3 (2026-10-14): viewer conditions O/U/A/P (U = Study 1 scorer's universal pick, replaces classic-enhance G);
-// calibration repeats (test-retest of taste); beta averages within base first; owner ladder = head pose S1-S3.
+// calibration repeats (test-retest of taste); beta averages within base first.
+// v0.4 (2026-10-23): owner intensity ladder removed; A/P are stacked on the owner's universal edit U ("U + taste pole",
+// generated in one instruction from the original, variants.ustack) unless the participant's own beta on U's axis is < 0
+// (then A/P = the single taste edit on the original). Same rule in the owner block so owner and viewer judge the same files.
 // Works in browser (Qualtrics JS / static page) and Node (tests). Attach to window.VisageAssign or require().
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(); else root.VisageAssign = factory();
@@ -106,43 +109,50 @@
 
   function poleName(sign) { return sign > 0 ? 'pos' : 'neg'; }
 
+  // v0.4: A/P base for owner o. Stack on U only if U is an edit on another axis, the participant does not dislike U's axis
+  // (beta < 0 -> opt out; beta 0 or not calibrated -> stack, the majority side) and both stacked poles exist.
+  function taste(o, jstar, beta) {
+    var u = o.u_pick, st = o.variants.ustack && o.variants.ustack[jstar.axis];
+    var b = beta && u && typeof beta[u.axis] === 'number' ? beta[u.axis] : null;
+    var stacked = !!(u && u.axis !== 'orig' && u.axis !== jstar.axis && !(b !== null && b < 0) && st && st.pos2 && st.neg2);
+    var src = stacked ? st : o.variants[jstar.axis];
+    return { stacked: stacked, optOut: b !== null && b < 0, pref: src[poleName(jstar.sign) + '2'], opp: src[poleName(-jstar.sign) + '2'],
+             prefSingle: o.variants[jstar.axis][poleName(jstar.sign) + '2'], oppSingle: o.variants[jstar.axis][poleName(-jstar.sign) + '2'] };
+  }
+
   // Latin square: participant sequence k (0-based within gender), owner group g (0..3) -> condition
   function conditionFor(g, k) { return CONDITIONS[(g + k) % 4]; }
 
   // Viewer block: manifest.owners[targetGender] (16 viewer owners with .group), k, jstar {axis, sign}
   // returns [{ownerId, condition, file, axis, pole}] in manifest order (shuffle for presentation separately)
-  function viewerAssignment(manifest, targetGender, k, jstar) {
+  function viewerAssignment(manifest, targetGender, k, jstar, beta) {
     var owners = manifest.owners[targetGender].filter(function (o) { return o.role === 'viewer'; });
     return owners.map(function (o) {
-      var c = conditionFor(o.group, k), file, axis = null, pole = null;
+      var c = conditionFor(o.group, k), file, axis = null, pole = null, stacked = false;
       if (c === 'O') file = o.file;
       else if (c === 'U') { file = o.u_pick.file; axis = o.u_pick.axis; pole = o.u_pick.pole; }
-      else if (c === 'A') { axis = jstar.axis; pole = poleName(jstar.sign); file = o.variants[axis][pole + '2']; }
-      else { axis = jstar.axis; pole = poleName(-jstar.sign); file = o.variants[axis][pole + '2']; }
-      return { ownerId: o.id, condition: c, file: file, axis: axis, pole: pole, group: o.group };
+      else {
+        var t = taste(o, jstar, beta); axis = jstar.axis; stacked = t.stacked;
+        pole = poleName(c === 'A' ? jstar.sign : -jstar.sign); file = c === 'A' ? t.pref : t.opp;
+      }
+      return { ownerId: o.id, condition: c, file: file, axis: axis, pole: pole, stacked: stacked, group: o.group };
     });
   }
 
-  // Selection sub-block: 4 select owners × 3 pool photos
-  function selectionBlock(manifest, targetGender) {
-    return manifest.owners[targetGender].filter(function (o) { return o.role === 'select'; })
-      .map(function (o) { return { ownerId: o.id, files: o.pool.slice(0, 3) }; });
-  }
-
   // Owner block: stand-ins of the participant's own gender. A = owners[k % 16], B = owners[(k + 8) % 16]
-  function ownerBlock(manifest, ownGender, k, jstar) {
+  function ownerBlock(manifest, ownGender, k, jstar, beta) {
     var owners = manifest.owners[ownGender].filter(function (o) { return o.role === 'viewer'; });
     var A = owners[k % owners.length], B = owners[(k + Math.floor(owners.length / 2)) % owners.length];
     function variants(o) {
+      var t = taste(o, jstar, beta);   // v0.4: same stacking rule as the viewer block; guessFile = the single edit (one named change)
       return [
         { kind: 'universal', file: o.u_pick.file, axis: o.u_pick.axis, pole: o.u_pick.pole, strength: 2 },
-        { kind: 'axis_pref', file: o.variants[jstar.axis][poleName(jstar.sign) + '2'], axis: jstar.axis, pole: poleName(jstar.sign), strength: 2 },
-        { kind: 'axis_opp', file: o.variants[jstar.axis][poleName(-jstar.sign) + '2'], axis: jstar.axis, pole: poleName(-jstar.sign), strength: 2 }
+        { kind: 'axis_pref', file: t.pref, guessFile: t.prefSingle, stacked: t.stacked, axis: jstar.axis, pole: poleName(jstar.sign), strength: 2 },
+        { kind: 'axis_opp', file: t.opp, guessFile: t.oppSingle, stacked: t.stacked, axis: jstar.axis, pole: poleName(-jstar.sign), strength: 2 }
       ].concat(o.variants.aiglobal ? [{ kind: 'ai_global', file: o.variants.aiglobal.pos2, axis: 'aiglobal', pole: 'pos', strength: 2 }] : []);  // v0.3.1
     }
     return {
-      A: { ownerId: A.id, orig: A.file, variants: variants(A), ladderAxis: A.variants.pose ? 'pose' : 'enhance',
-           ladder: A.variants.pose ? [A.variants.pose.pos1, A.variants.pose.pos2, A.variants.pose.pos3] : [A.variants.enhance.pos1, A.variants.enhance.pos2, A.variants.enhance.pos3] },
+      A: { ownerId: A.id, orig: A.file, variants: variants(A) },
       B: { ownerId: B.id, orig: B.file, variants: variants(B) }
     };
   }
@@ -167,5 +177,5 @@
   function url(manifest, rel) { return manifest.base_url ? manifest.base_url + '/' + rel : rel; }
 
   return { hash: hash, computeBeta: computeBeta, computeBetaPairs: computeBetaPairs, calibrationPairs: calibrationPairs, pickAxis: pickAxis, conditionFor: conditionFor, viewerAssignment: viewerAssignment,
-           selectionBlock: selectionBlock, ownerBlock: ownerBlock, calibrationOrder: calibrationOrder, url: url, CONDITIONS: CONDITIONS };
+           taste: taste, ownerBlock: ownerBlock, calibrationOrder: calibrationOrder, url: url, CONDITIONS: CONDITIONS };
 });

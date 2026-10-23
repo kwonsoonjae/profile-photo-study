@@ -102,13 +102,13 @@
   }
 
   // ---------- flow ----------
-  var STEPS = ['consent', 'profile', 'calib_intro', 'calib', 'viewer_intro', 'viewer', 'select_intro', 'select', 'transition',
-               'ownerA_rate', 'ownerA_ladder', 'ownerA_guess', 'ownerA_survey', 'ownerB_rate', 'end'];
+  var STEPS = ['consent', 'profile', 'calib_intro', 'calib', 'viewer_intro', 'viewer', 'transition',
+               'ownerA_rate', 'ownerA_guess', 'ownerA_survey', 'ownerB_rate', 'end'];
   function go(step) {
     S.step = step; save();
     var i = STEPS.indexOf(step); bar.style.width = Math.round(100 * i / (STEPS.length - 1)) + '%';
     ({ consent: vConsent, profile: vProfile, calib_intro: vCalibIntro, calib: vCalib, viewer_intro: vViewerIntro, viewer: vViewer,
-       select_intro: vSelectIntro, select: vSelect, transition: vTransition, ownerA_rate: vOwnerRate.bind(null, 'A'), ownerA_ladder: vLadder,
+       transition: vTransition, ownerA_rate: vOwnerRate.bind(null, 'A'),
        ownerA_guess: vGuess, ownerA_survey: vOwnerSurvey, ownerB_rate: vOwnerRate.bind(null, 'B'), end: vEnd })[step]();
   }
   function axes() { return CFG.study.indexOf('pilot') === 0 ? M.axes.map(function (a) { return a.id; }) : CFG.mainAxes; }  // taste axes (j* candidates)
@@ -118,8 +118,9 @@
   }
   // Participant-facing dimension names (generation vocabulary in axes.json stays as is)
   var AXIS_LABEL = { smile: '표정 (진지한 ↔ 활짝 웃는)', hair: '머리 (차분하게 정돈 ↔ 볼륨 있게)', grooming: '꾸밈 (여: 화장 / 남: 수염)',
-    attire: '옷차림 (후드·티셔츠 ↔ 셔츠·블라우스)', lighting: '조명 (밝은 자연광 ↔ 따뜻한 분위기)', background: '배경 (실내 ↔ 야외)',
-    gaze: '시선 (카메라 응시 ↔ 다른 곳 보기)', framing: '구도 (얼굴 가까이 ↔ 상반신)', eyewear: '안경 (안 씀 ↔ 씀)', tone: '사진 색감 (선명 ↔ 필름 톤)' };
+    attire: '옷차림 (후드티 ↔ 셔츠·블라우스)', topcolor: '옷 색 (검정·차콜 ↔ 빨강·코랄)', lighting: '조명 (밝고 산뜻한 ↔ 따뜻한 노을빛)',
+    background: '배경 (카페 ↔ 야외)', gaze: '시선 (카메라 응시 ↔ 다른 곳 보기)', framing: '구도 (얼굴 가까이 ↔ 허리 위까지)',
+    eyewear: '안경 (안 씀 ↔ 씀)', tone: '사진 색감 (선명 ↔ 필름 톤)' };  // v0.4 axes (axes.json axes_v4)
   function axisLabel(id) { return AXIS_LABEL[id] || id; }
   function blockEnd(next) {
     var b = h('p', { class: 'muted', text: '저장 중…' }); screen([b]);
@@ -180,7 +181,7 @@
       register().then(function (r) {
         if (!r.ok) throw new Error(r.error || 'register');
         if (r.complete) { S.step = 'end'; S.done = true; save(); vAlready(); return; }
-        S.k = r.k; S.disclosure = r.disclosure; save(); go('calib_intro');
+        S.k = r.k; S.disclosure = 0; save(); go('calib_intro');  // v0.4: no disclosure banner (registry still alternates its own flag; ignored)
       }).catch(function () {
         screen([h('div', { class: 'card' }, [h('p', { text: '서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.' }), nextBtn('다시 시도', function () { return true; }, vProfile)])]);
       });
@@ -234,7 +235,7 @@
   function finishCalib() {
     var ax = axes(), b = VA.computeBetaPairs(S.calib, calibAxes()), j = VA.pickAxis(b.beta, b.agree, ax, S.pid);
     S.beta = b.beta; S.agree = b.agree; S.jstar = { axis: j.axis, sign: j.sign }; S.flat = j.flat; S.tie = j.tie;
-    S.viewerPlan = VA.viewerAssignment(M, S.target, S.k, S.jstar);
+    S.viewerPlan = VA.viewerAssignment(M, S.target, S.k, S.jstar, S.beta);  // v0.4: A/P stacked on U unless beta on U's axis < 0
     S.viewerOrder = shuffle(S.viewerPlan.map(function (_, i) { return i; }), S.pid + ':viewer');
     S.attentionAt = 4 + VA.hash(S.pid + ':att') % 8;  // attention card inserted after this many owner cards
     S.viewerIdx = 0;
@@ -242,12 +243,12 @@
     calibAxes().forEach(function (x) { rec('calib', { item: 'beta', axis: x, value: b.beta[x] }); });
     blockEnd('viewer_intro');
   }
+  function strengthTag(v) { return v.stacked ? '2+U' : 2; }  // v0.4: '2+U' = taste edit stacked on the owner's universal edit
 
   // 3 viewer block
   function vViewerIntro() {
     preload(S.viewerPlan.slice(0, 4).map(function (v) { return v.file; }));
     var kids = [h('h1', { text: '프로필 평가' })];
-    if (S.disclosure) kids.push(h('div', { class: 'banner', text: '안내: 이 앱의 일부 프로필 사진은 AI가 보는 사람의 취향에 맞춰 조정한 것입니다.' }));
     kids.push(h('div', { class: 'card' }, [
       h('p', { text: '이제 데이팅 앱에서 추천받은 상대 ' + S.viewerPlan.length + '명의 프로필을 봅니다. 각 프로필마다 세 가지 질문에 답해 주세요.' }),
       h('p', { class: 'muted', text: '모두 당신과 비슷한 나이대이고 가까운 곳에 사는 사람이라고 생각하고, 사진에서 받은 느낌대로 답하면 됩니다.' })]));
@@ -257,12 +258,12 @@
   function vViewer() {
     var i = S.viewerIdx, total = S.viewerPlan.length;
     if (i === S.attentionAt && !S.attentionDone) return vAttention();
-    if (i >= total) return blockEnd('select_intro');
+    if (i >= total) return blockEnd('transition');
     var v = S.viewerPlan[S.viewerOrder[i]];
     var a = {}, t0 = now(), btn;
     var nxt = S.viewerPlan[S.viewerOrder[i + 1]]; if (nxt) preload([nxt.file]);
     btn = nextBtn('다음 프로필', function () { return a.attr && a.like !== undefined && a.natural; }, function () {
-      var base = { target_id: v.ownerId, file: v.file, condition: v.condition, axis: v.axis || '', pole: v.pole || '', strength: v.condition === 'O' ? '' : 2, rt_ms: now() - t0, order: i };
+      var base = { target_id: v.ownerId, file: v.file, condition: v.condition, axis: v.axis || '', pole: v.pole || '', strength: v.condition === 'O' ? '' : strengthTag(v), rt_ms: now() - t0, order: i };
       rec('viewer', Object.assign({ item: 'attr', value: a.attr }, base));
       rec('viewer', Object.assign({ item: 'like', value: a.like }, base));
       rec('viewer', Object.assign({ item: 'natural', value: a.natural }, base));
@@ -285,41 +286,6 @@
       scale(a, 'v', 7, '', '', function () { btn.refresh(); })]), btn]);
   }
 
-  // 4 selection sub-block
-  function vSelectIntro() {
-    if (!S.selectPlan) {
-      S.selectPlan = shuffle(VA.selectionBlock(M, S.target), S.pid + ':sel').map(function (s) { return { ownerId: s.ownerId, files: shuffle(s.files, S.pid + s.ownerId) }; });
-      S.selectIdx = 0; save();
-    }
-    preload(S.selectPlan[0].files);
-    screen([h('h1', { text: '대표 사진 고르기' }), h('div', { class: 'card' }, [
-      h('p', { text: '다른 상대 ' + S.selectPlan.length + '명에 대해, 같은 사람의 사진 세 장을 함께 보여 드립니다.' }),
-      h('p', { text: '데이팅 앱 대표 사진으로 어느 것이 좋은지 순서를 매겨 주세요.' })]),
-      nextBtn('시작', function () { return true; }, function () { go('select'); })]);
-  }
-  function vSelect() {  // tap-to-rank (SURVEY_SPEC v0.2 §3): 1st, 2nd tap; the remaining photo is 3rd
-    var i = S.selectIdx; if (i >= S.selectPlan.length) return blockEnd('transition');
-    var s = S.selectPlan[i], ranks = {}, t0 = now(), btn, tiles = [];
-    if (S.selectPlan[i + 1]) preload(S.selectPlan[i + 1].files);
-    function n() { return Object.keys(ranks).length; }
-    function paint() { tiles.forEach(function (t, k) { t.badge.textContent = ranks[k] ? ranks[k] + '위' : ''; t.box.classList.toggle('ranked', !!ranks[k]); }); btn.refresh(); }
-    btn = nextBtn('다음', function () { return n() === s.files.length; }, function () {
-      s.files.forEach(function (f, k) { rec('select', { target_id: s.ownerId, file: f, condition: 'sel', item: 'rank', value: ranks[k], rt_ms: now() - t0, order: i * 3 + k }); });
-      S.selectIdx++; save(); vSelect();
-    });
-    s.files.forEach(function (f, k) {
-      var badge = h('div', { class: 'rank-badge' }), box = h('button', { type: 'button', class: 'rank-tile', onclick: function () {
-        if (ranks[k]) { ranks = {}; } else { ranks[k] = n() + 1; if (n() === s.files.length - 1) s.files.forEach(function (_, q) { if (!ranks[q]) ranks[q] = s.files.length; }); }
-        paint();
-      } }, [img(f, 'sm'), badge]);
-      tiles.push({ box: box, badge: badge });
-    });
-    screen([h('p', { class: 'muted', text: (i + 1) + ' / ' + S.selectPlan.length }), h('p', { class: 'q', text: '같은 사람의 사진 세 장입니다. 데이팅 앱 대표 사진으로 가장 좋은 것부터 차례로 눌러 주세요.' }),
-      h('p', { class: 'muted', text: '두 장을 고르면 남은 한 장은 자동으로 3위가 됩니다. 다시 고르려면 순위가 붙은 사진을 누르세요.' }),
-      h('div', { class: 'row3' }, tiles.map(function (t) { return t.box; })), btn]);
-    paint();
-  }
-
   // 5 transition (first disclosure of editing)
   function vTransition() {
     screen([h('h1', { text: '안내' }), h('div', { class: 'card' }, [
@@ -327,7 +293,7 @@
       h('p', { text: '이 연구는 AI가 데이팅 앱 프로필 사진을 보는 사람에 맞게 조정하는 기능을 살펴봅니다. 앞에서는 자연스러운 반응을 얻기 위해 이 사실을 미리 알려 드리지 않았습니다.' }),
       h('p', { text: '이제 반대 입장에서, 당신이 프로필을 올리는 사람이라고 상상하고 몇 가지 질문에 답해 주세요.' })]),
       nextBtn('계속', function () { return true; }, function () {
-        S.ownerPlan = VA.ownerBlock(M, S.own, S.k, S.jstar); save(); go('ownerA_rate');
+        S.ownerPlan = VA.ownerBlock(M, S.own, S.k, S.jstar, S.beta); save(); go('ownerA_rate');
       })]);
   }
 
@@ -338,11 +304,11 @@
     var needSelf = which === 'A';
     btn = nextBtn('다음', function () { return order.every(function (i) { return a['acc' + i] && (!needSelf || a['self' + i]); }); }, function () {
       order.forEach(function (i, pos) {
-        var v = P.variants[i], base = { target_id: P.ownerId, file: v.file, condition: 'owner' + which, axis: v.axis, pole: v.pole, strength: v.strength, rt_ms: now() - t0, order: pos };
+        var v = P.variants[i], base = { target_id: P.ownerId, file: v.file, condition: 'owner' + which, axis: v.axis, pole: v.pole, strength: v.stacked ? strengthTag(v) : v.strength, rt_ms: now() - t0, order: pos };
         rec('owner', Object.assign({ item: 'accept', value: a['acc' + i] }, base));
         if (needSelf) rec('owner', Object.assign({ item: 'selfness', value: a['self' + i] }, base));
       });
-      blockEnd(which === 'A' ? 'ownerA_ladder' : 'end');
+      blockEnd(which === 'A' ? 'ownerA_guess' : 'end');
     });
     var r = function () { btn.refresh(); };
     var intro = which === 'A'
@@ -357,27 +323,14 @@
     });
     screen([h('h1', { text: which === 'A' ? '내 프로필이라면' : '한 사람 더' }), h('p', { text: intro })].concat(cards).concat([btn]));
   }
-  function vLadder() {
-    var P = S.ownerPlan.A, a = {}, t0 = now(), btn;
-    btn = nextBtn('다음', function () { return a.max !== undefined; }, function () {
-      rec('owner', { target_id: P.ownerId, condition: 'ownerA', axis: P.ladderAxis || 'enhance', item: 'intensity_max', value: a.max, rt_ms: now() - t0 });
-      save(); go('ownerA_guess');
-    });
-    var pose = P.ladderAxis === 'pose', labels = pose ? ['조금', '중간', '많이'] : ['약하게', '중간', '강하게'];
-    screen([h('h1', { text: pose ? '얼굴 각도' : '보정 강도' }), h('p', { text: pose ? '같은 원본에서 AI가 얼굴 각도를 세 가지 정도로 돌렸습니다. 내 프로필이라면 어느 정도까지 허용하시겠어요?' : '같은 원본을 AI가 세 가지 강도로 보정했습니다. 내 프로필이라면 어느 강도까지 허용하시겠어요?' }),
-      h('div', { class: 'row4' }, [h('div', {}, [img(P.orig), h('div', { class: 'label-under', text: '원본' })])].concat(P.ladder.map(function (f, i) {
-        return h('div', {}, [img(f), h('div', { class: 'label-under', text: labels[i] })]);
-      }))),
-      h('div', { class: 'card' }, [choices(a, 'max', [{ label: pose ? '바꾸지 않는다' : '보정하지 않는다', value: 0 }, { label: labels[0] + '까지', value: 1 }, { label: '중간까지', value: 2 }, { label: labels[2] + '까지', value: 3 }], function () { btn.refresh(); })]), btn]);
-  }
   function vGuess() {
-    var P = S.ownerPlan.A, targets = P.variants.filter(function (v) { return v.kind === 'axis_pref' || v.kind === 'axis_opp' || v.kind === 'ai_global'; });
+    var P = S.ownerPlan.A, targets = P.variants.filter(function (v) { return (v.kind === 'axis_pref' || v.kind === 'axis_opp' || v.kind === 'ai_global') && (v.guessFile || v.file) !== P.orig; });  // one-sided axes: the base pole is the original itself
     targets = shuffle(targets, S.pid + ':guess');
     var a = {}, t0 = now(), btn;
     var opts = shuffle(axes(), S.pid + ':guessopts').map(function (x) { return { label: axisLabel(x), value: x }; }).concat([{ label: '여러 가지가 한꺼번에 바뀌었다', value: 'multiple' }, { label: '잘 모르겠다', value: 'unknown' }]);
     btn = nextBtn('다음', function () { return targets.every(function (_, i) { return a['g' + i] && a['d' + i]; }); }, function () {
       targets.forEach(function (v, i) {
-        var base = { target_id: P.ownerId, file: v.file, condition: 'ownerA', axis: v.axis, pole: v.pole, strength: 2, rt_ms: now() - t0, order: i };
+        var base = { target_id: P.ownerId, file: v.guessFile || v.file, condition: 'ownerA', axis: v.axis, pole: v.pole, strength: 2, rt_ms: now() - t0, order: i };
         rec('owner', Object.assign({ item: 'guess', value: a['g' + i] }, base));
         rec('owner', Object.assign({ item: 'guess_correct', value: (v.axis === 'aiglobal' ? a['g' + i] === 'multiple' : a['g' + i] === v.axis) ? 1 : 0 }, base));
         rec('owner', Object.assign({ item: 'describable', value: a['d' + i] }, base));
@@ -386,7 +339,7 @@
     });
     var r = function () { btn.refresh(); };
     screen([h('h1', { text: '무엇이 바뀌었나요?' })].concat(targets.map(function (v, i) {
-      return h('div', { class: 'card' }, [h('div', { class: 'row2' }, [h('div', {}, [img(P.orig, 'sm'), h('div', { class: 'label-under', text: '원본' })]), h('div', {}, [img(v.file, 'sm'), h('div', { class: 'label-under', text: 'AI 편집' })])]),
+      return h('div', { class: 'card' }, [h('div', { class: 'row2' }, [h('div', {}, [img(P.orig, 'sm'), h('div', { class: 'label-under', text: '원본' })]), h('div', {}, [img(v.guessFile || v.file, 'sm'), h('div', { class: 'label-under', text: 'AI 편집' })])]),  // single named edit
         h('p', { class: 'q', text: '원본과 비교해 가장 크게 바뀐 것은?' }), choices(a, 'g' + i, opts, r),
         h('p', { class: 'q', text: '이 변화를 다른 사람에게 말로 설명할 수 있다' }), scale(a, 'd' + i, 7, '전혀 아니다', '매우 그렇다', r)]);
     })).concat([btn]));
