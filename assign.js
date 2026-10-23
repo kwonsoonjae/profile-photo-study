@@ -149,7 +149,10 @@
         { kind: 'universal', file: o.u_pick.file, axis: o.u_pick.axis, pole: o.u_pick.pole, strength: 2 },
         { kind: 'axis_pref', file: t.pref, guessFile: t.prefSingle, stacked: t.stacked, axis: jstar.axis, pole: poleName(jstar.sign), strength: 2 },
         { kind: 'axis_opp', file: t.opp, guessFile: t.oppSingle, stacked: t.stacked, axis: jstar.axis, pole: poleName(-jstar.sign), strength: 2 }
-      ].concat(o.variants.aiglobal ? [{ kind: 'ai_global', file: o.variants.aiglobal.pos2, axis: 'aiglobal', pole: 'pos', strength: 2 }] : []);  // v0.3.1
+      ].concat(o.variants.aiglobal ? [{ kind: 'ai_global', file: o.variants.aiglobal.pos2, axis: 'aiglobal', pole: 'pos', strength: 2 }] : [])  // v0.3.1
+       .filter(function (v, i, arr) {  // one-sided axes: a pole can be the original or U itself -> show each distinct photo once
+         return v.file !== o.file && arr.findIndex(function (w) { return w.file === v.file; }) === i;
+       });
     }
     return {
       A: { ownerId: A.id, orig: A.file, variants: variants(A) },
