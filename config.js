@@ -6,7 +6,8 @@ window.VISAGE_CONFIG = {
   completionUrl: '',
   completionCode: 'VSG26P',
   study: 'pilot',            // 'pilot' (10-axis calibration) | 'main' (6 axes, set mainAxes)
-  mainAxes: ['smile', 'hair', 'grooming', 'attire', 'lighting', 'background'],
+  mainAxes: ['smile', 'hair', 'grooming', 'attire', 'lighting', 'background'],   // main study: taste axes from the pilot decision rule (j* candidates)
+  calibExtraAxes: [],          // main study: top universal axis besides head pose, calibrated but not a j* candidate (set after the pilot)
   attentionAnswer: 3,
   ageRange: [20, 39],         // eligibility; outside -> screen-out page
   screenoutUrl: ''           // panel screen-out return ({pid} replaced); empty = message only

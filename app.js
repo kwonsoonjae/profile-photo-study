@@ -112,9 +112,10 @@
        ownerA_guess: vGuess, ownerA_survey: vOwnerSurvey, ownerB_rate: vOwnerRate.bind(null, 'B'), end: vEnd })[step]();
   }
   function axes() { return CFG.study.indexOf('pilot') === 0 ? M.axes.map(function (a) { return a.id; }) : CFG.mainAxes; }  // taste axes (j* candidates)
-  function calibAxes() {  // v0.3: head pose is calibrated (universal-axis check) but never a j* candidate
-    var has = (M.calibration[S.target] || []).some(function (c) { return c.axis === 'pose'; });
-    return has ? axes().concat(['pose']) : axes();
+  function calibAxes() {  // head pose (= U) and, in the main study, the top universal axes are calibrated but never j* candidates
+    var cal = M.calibration[S.target] || [], extra = CFG.study.indexOf('pilot') === 0 ? [] : (CFG.calibExtraAxes || []);
+    var out = axes().concat(extra.filter(function (a) { return axes().indexOf(a) < 0 && cal.some(function (c) { return c.axis === a; }); }));
+    return cal.some(function (c) { return c.axis === 'pose'; }) ? out.concat(['pose']) : out;
   }
   // Participant-facing dimension names (generation vocabulary in axes.json stays as is)
   var AXIS_LABEL = { smile: '표정 (진지한 ↔ 활짝 웃는)', hair: '머리 (차분하게 정돈 ↔ 볼륨 있게)', grooming: '꾸밈 (여: 화장 / 남: 수염)',
