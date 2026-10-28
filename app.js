@@ -102,16 +102,21 @@
   }
 
   // ---------- flow ----------
-  var STEPS = ['consent', 'profile', 'calib_intro', 'calib', 'viewer_intro', 'viewer', 'transition',
+  var STEPS = ['consent', 'profile', 'calib_intro', 'calib', 'viewer_intro', 'viewer', 'select_intro', 'select', 'suspicion', 'transition',
                'ownerA_rate', 'ownerA_guess', 'ownerA_survey', 'ownerB_rate', 'end'];
   function go(step) {
     S.step = step; save();
     var i = STEPS.indexOf(step); bar.style.width = Math.round(100 * i / (STEPS.length - 1)) + '%';
     ({ consent: vConsent, profile: vProfile, calib_intro: vCalibIntro, calib: vCalib, viewer_intro: vViewerIntro, viewer: vViewer,
-       transition: vTransition, ownerA_rate: vOwnerRate.bind(null, 'A'),
+       select_intro: vSelectIntro, select: vSelect, suspicion: vSuspicion, transition: vTransition, ownerA_rate: vOwnerRate.bind(null, 'A'),
        ownerA_guess: vGuess, ownerA_survey: vOwnerSurvey, ownerB_rate: vOwnerRate.bind(null, 'B'), end: vEnd })[step]();
   }
-  function axes() { return CFG.study.indexOf('pilot') === 0 ? M.axes.map(function (a) { return a.id; }) : CFG.mainAxes; }  // taste axes (j* candidates)
+  // taste axes (j* candidates) for owners of one sex: axes that are one-sided for that sex are not taste axes there (v0.4)
+  function axesFor(sex) {
+    var all = CFG.study.indexOf('pilot') === 0 ? M.axes.map(function (a) { return a.id; }) : CFG.mainAxes, ex = (M.axes_excluded || {})[sex] || [];
+    return all.filter(function (a) { return ex.indexOf(a) < 0; });
+  }
+  function axes() { return axesFor(S.target); }
   function calibAxes() {  // head pose (= U) and, in the main study, the top universal axes are calibrated but never j* candidates
     var cal = M.calibration[S.target] || [], extra = CFG.study.indexOf('pilot') === 0 ? [] : (CFG.calibExtraAxes || []);
     var out = axes().concat(extra.filter(function (a) { return axes().indexOf(a) < 0 && cal.some(function (c) { return c.axis === a; }); }));
@@ -142,7 +147,6 @@
       '<h2>연구 참여 안내</h2>' +
       '<p>이 조사는 데이팅 앱 프로필 사진에서 받는 인상을 알아보는 연구입니다. 약 15분이 걸립니다.</p>' +
       '<p>조사는 <b>이성 상대를 만나는 데이팅 앱</b> 상황을 가정하며, 이성 교제에 관심 있는 만 ' + CFG.ageRange[0] + '–' + CFG.ageRange[1] + '세 성인을 대상으로 합니다.</p>' +
-      '<p><b>화면에 나오는 얼굴은 모두 AI로 만든 가상 인물입니다.</b> 실제 사람이 아닙니다.</p>' +
       '<p>여러 사람의 사진을 보고 인상을 평가하고, 마지막에 몇 가지 의견을 묻습니다. 정답은 없으니 처음 느낌대로 답해 주세요.</p>' +
       '<p>이름·연락처 같은 개인 식별 정보는 수집하지 않습니다. 응답은 연구 목적으로만 쓰이며 통계 처리된 형태로만 발표됩니다. 언제든 창을 닫아 참여를 그만둘 수 있고, 그만두어도 불이익은 없습니다.</p>' +
       '<p class="muted">연구 책임자: 권순재 · 문의: 패널 안내 페이지의 연락처</p>' });
@@ -182,7 +186,7 @@
       register().then(function (r) {
         if (!r.ok) throw new Error(r.error || 'register');
         if (r.complete) { S.step = 'end'; S.done = true; save(); vAlready(); return; }
-        S.k = r.k; S.disclosure = 0; save(); go('calib_intro');  // v0.4: no disclosure banner (registry still alternates its own flag; ignored)
+        S.k = r.k; S.disclosure = r.disclosure; save(); go('calib_intro');  // registry alternates the banner group within sex
       }).catch(function () {
         screen([h('div', { class: 'card' }, [h('p', { text: '서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.' }), nextBtn('다시 시도', function () { return true; }, vProfile)])]);
       });
@@ -250,6 +254,7 @@
   function vViewerIntro() {
     preload(S.viewerPlan.slice(0, 4).map(function (v) { return v.file; }));
     var kids = [h('h1', { text: '프로필 평가' })];
+    if (S.disclosure) kids.push(h('div', { class: 'banner', text: '안내: 이 앱의 일부 프로필 사진은 AI가 보는 사람의 취향에 맞춰 조정한 것입니다.' }));  // half of the sample
     kids.push(h('div', { class: 'card' }, [
       h('p', { text: '이제 데이팅 앱에서 추천받은 상대 ' + S.viewerPlan.length + '명의 프로필을 봅니다. 각 프로필마다 세 가지 질문에 답해 주세요.' }),
       h('p', { class: 'muted', text: '모두 당신과 비슷한 나이대이고 가까운 곳에 사는 사람이라고 생각하고, 사진에서 받은 느낌대로 답하면 됩니다.' })]));
@@ -259,7 +264,7 @@
   function vViewer() {
     var i = S.viewerIdx, total = S.viewerPlan.length;
     if (i === S.attentionAt && !S.attentionDone) return vAttention();
-    if (i >= total) return blockEnd('transition');
+    if (i >= total) return blockEnd('select_intro');
     var v = S.viewerPlan[S.viewerOrder[i]];
     var a = {}, t0 = now(), btn;
     var nxt = S.viewerPlan[S.viewerOrder[i + 1]]; if (nxt) preload([nxt.file]);
@@ -287,14 +292,66 @@
       scale(a, 'v', 7, '', '', function () { btn.refresh(); })]), btn]);
   }
 
-  // 5 transition (first disclosure of editing)
+  // 4 selection sub-block
+  function vSelectIntro() {
+    if (!S.selectPlan) {
+      S.selectPlan = shuffle(VA.selectionBlock(M, S.target), S.pid + ':sel').map(function (s) { return { ownerId: s.ownerId, files: shuffle(s.files, S.pid + s.ownerId) }; });
+      S.selectIdx = 0; save();
+    }
+    preload(S.selectPlan[0].files);
+    screen([h('h1', { text: '대표 사진 고르기' }), h('div', { class: 'card' }, [
+      h('p', { text: '다른 상대 ' + S.selectPlan.length + '명에 대해, 같은 사람의 사진 세 장을 함께 보여 드립니다.' }),
+      h('p', { text: '데이팅 앱 대표 사진으로 어느 것이 좋은지 순서를 매겨 주세요.' })]),
+      nextBtn('시작', function () { return true; }, function () { go('select'); })]);
+  }
+  function vSelect() {  // tap-to-rank (SURVEY_SPEC v0.2 §3): 1st, 2nd tap; the remaining photo is 3rd
+    var i = S.selectIdx; if (i >= S.selectPlan.length) return blockEnd('suspicion');
+    var s = S.selectPlan[i], ranks = {}, t0 = now(), btn, tiles = [];
+    if (S.selectPlan[i + 1]) preload(S.selectPlan[i + 1].files);
+    function n() { return Object.keys(ranks).length; }
+    function paint() { tiles.forEach(function (t, k) { t.badge.textContent = ranks[k] ? ranks[k] + '위' : ''; t.box.classList.toggle('ranked', !!ranks[k]); }); btn.refresh(); }
+    btn = nextBtn('다음', function () { return n() === s.files.length; }, function () {
+      s.files.forEach(function (f, k) { rec('select', { target_id: s.ownerId, file: f, condition: 'sel', item: 'rank', value: ranks[k], rt_ms: now() - t0, order: i * 3 + k }); });
+      S.selectIdx++; save(); vSelect();
+    });
+    s.files.forEach(function (f, k) {
+      var badge = h('div', { class: 'rank-badge' }), box = h('button', { type: 'button', class: 'rank-tile', onclick: function () {
+        if (ranks[k]) { ranks = {}; } else { ranks[k] = n() + 1; if (n() === s.files.length - 1) s.files.forEach(function (_, q) { if (!ranks[q]) ranks[q] = s.files.length; }); }
+        paint();
+      } }, [img(f, 'sm'), badge]);
+      tiles.push({ box: box, badge: badge });
+    });
+    screen([h('p', { class: 'muted', text: (i + 1) + ' / ' + S.selectPlan.length }), h('p', { class: 'q', text: '같은 사람의 사진 세 장입니다. 데이팅 앱 대표 사진으로 가장 좋은 것부터 차례로 눌러 주세요.' }),
+      h('p', { class: 'muted', text: '두 장을 고르면 남은 한 장은 자동으로 3위가 됩니다. 다시 고르려면 순위가 붙은 사진을 누르세요.' }),
+      h('div', { class: 'row3' }, tiles.map(function (t) { return t.box; })), btn]);
+    paint();
+  }
+
+  // 4b suspicion probe (before any disclosure): did the photos look like real people, untouched?
+  function vSuspicion() {
+    var a = {}, t0 = now(), btn = nextBtn('다음', function () { return a.real && a.edited; }, function () {
+      rec('meta', { item: 'suspicion_real', value: a.real, rt_ms: now() - t0 });
+      rec('meta', { item: 'suspicion_edited', value: a.edited, rt_ms: now() - t0 });
+      blockEnd('transition');
+    });
+    var r = function () { btn.refresh(); };
+    screen([h('h1', { text: '사진에 대한 느낌' }), h('div', { class: 'card' }, [
+      h('p', { class: 'q', text: '앞에서 본 프로필 사진들은 실제 사람을 찍은 사진처럼 보였다' }), scale(a, 'real', 7, '전혀 아니다', '매우 그렇다', r),
+      h('p', { class: 'q', text: '앞에서 본 사진 중에 편집된 사진이 있다고 느꼈다' }), scale(a, 'edited', 7, '전혀 아니다', '매우 그렇다', r)]), btn]);
+  }
+
+  // 5 transition (first disclosure: AI faces and AI editing)
   function vTransition() {
     screen([h('h1', { text: '안내' }), h('div', { class: 'card' }, [
-      h('p', { html: '<b>지금까지 본 사진 중 일부는 AI가 편집한 것입니다.</b>' }),
+      h('p', { html: '<b>지금까지 본 얼굴은 모두 AI로 만든 가상 인물이며, 실제 사람이 아닙니다. 그리고 사진 중 일부는 AI가 편집한 것입니다.</b>' }),
       h('p', { text: '이 연구는 AI가 데이팅 앱 프로필 사진을 보는 사람에 맞게 조정하는 기능을 살펴봅니다. 앞에서는 자연스러운 반응을 얻기 위해 이 사실을 미리 알려 드리지 않았습니다.' }),
       h('p', { text: '이제 반대 입장에서, 당신이 프로필을 올리는 사람이라고 상상하고 몇 가지 질문에 답해 주세요.' })]),
       nextBtn('계속', function () { return true; }, function () {
-        S.ownerPlan = VA.ownerBlock(M, S.own, S.k, S.jstar, S.beta); save(); go('ownerA_rate');
+        // stand-ins are of the participant's own sex: if j* is not a taste axis for that sex, use the strongest axis that is
+        var ja = S.jstar, ownAx = axesFor(S.own).filter(function (x) { return axes().indexOf(x) >= 0; });
+        if (ownAx.indexOf(ja.axis) < 0) { var alt = VA.pickAxis(S.beta, S.agree, ownAx, S.pid); ja = { axis: alt.axis, sign: alt.sign }; }
+        S.jstarOwn = ja; rec('owner', { item: 'jstar_owner', axis: ja.axis, pole: ja.sign > 0 ? 'pos' : 'neg', value: ja.axis === S.jstar.axis ? 'same' : 'fallback' });
+        S.ownerPlan = VA.ownerBlock(M, S.own, S.k, ja, S.beta); save(); go('ownerA_rate');
       })]);
   }
 
@@ -328,7 +385,7 @@
     var P = S.ownerPlan.A, targets = P.variants.filter(function (v) { return (v.kind === 'axis_pref' || v.kind === 'axis_opp' || v.kind === 'ai_global') && (v.guessFile || v.file) !== P.orig; });  // one-sided axes: the base pole is the original itself
     targets = shuffle(targets, S.pid + ':guess');
     var a = {}, t0 = now(), btn;
-    var opts = shuffle(axes(), S.pid + ':guessopts').map(function (x) { return { label: axisLabel(x), value: x }; }).concat([{ label: '여러 가지가 한꺼번에 바뀌었다', value: 'multiple' }, { label: '잘 모르겠다', value: 'unknown' }]);
+    var opts = shuffle(axesFor(S.own), S.pid + ':guessopts').map(function (x) { return { label: axisLabel(x), value: x }; }).concat([{ label: '여러 가지가 한꺼번에 바뀌었다', value: 'multiple' }, { label: '잘 모르겠다', value: 'unknown' }]);
     btn = nextBtn('다음', function () { return targets.every(function (_, i) { return a['g' + i] && a['d' + i]; }); }, function () {
       targets.forEach(function (v, i) {
         var base = { target_id: P.ownerId, file: v.guessFile || v.file, condition: 'ownerA', axis: v.axis, pole: v.pole, strength: 2, rt_ms: now() - t0, order: i };

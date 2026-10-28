@@ -139,6 +139,12 @@
     });
   }
 
+  // Selection sub-block: 4 select persons x 3 natural photos of the same person (v0.4: restored)
+  function selectionBlock(manifest, targetGender) {
+    return manifest.owners[targetGender].filter(function (o) { return o.role === 'select'; })
+      .map(function (o) { return { ownerId: o.id, files: o.pool.slice(0, 3) }; });
+  }
+
   // Owner block: stand-ins of the participant's own gender. A = owners[k % 16], B = owners[(k + 8) % 16]
   function ownerBlock(manifest, ownGender, k, jstar, beta) {
     var owners = manifest.owners[ownGender].filter(function (o) { return o.role === 'viewer'; });
@@ -180,5 +186,5 @@
   function url(manifest, rel) { return manifest.base_url ? manifest.base_url + '/' + rel : rel; }
 
   return { hash: hash, computeBeta: computeBeta, computeBetaPairs: computeBetaPairs, calibrationPairs: calibrationPairs, pickAxis: pickAxis, conditionFor: conditionFor, viewerAssignment: viewerAssignment,
-           taste: taste, ownerBlock: ownerBlock, calibrationOrder: calibrationOrder, url: url, CONDITIONS: CONDITIONS };
+           taste: taste, selectionBlock: selectionBlock, ownerBlock: ownerBlock, calibrationOrder: calibrationOrder, url: url, CONDITIONS: CONDITIONS };
 });
